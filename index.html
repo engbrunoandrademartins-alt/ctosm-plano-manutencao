@@ -264,6 +264,15 @@ button.ghost{background:none; color:var(--ink-soft); padding:4px 8px;}
 .le-rel-fotos{display:grid; grid-template-columns:1fr 1fr; gap:6px;}
 .le-rel-fotos img{width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:4px; border:1px solid var(--line);}
 .le-rel-col:only-child{grid-column:1 / -1;} .le-rel-col:only-child .le-rel-fotos{grid-template-columns:repeat(4,1fr);}
+.exec-abas ~ .topbar button:disabled, .le-acoes button:disabled{opacity:.45; cursor:not-allowed;}
+.exec-abas{margin:0 0 16px; padding-bottom:12px; border-bottom:1px solid var(--line);}
+.exec-conc-tit{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+.exec-conc-tit input[type=checkbox]{width:18px; height:18px; margin:0;}
+.exec-fotos{display:flex; gap:14px; flex-wrap:wrap; margin-top:6px;}
+.exec-fotos > div{display:flex; flex-direction:column; gap:3px;}
+.exec-fotos small{font-size:10.5px; color:var(--ink-soft); letter-spacing:.04em;}
+.exec-fotos .le-mini{margin:0;}
+.exec-semfoto{font-size:11.5px; color:var(--amber);}
 @media(max-width:640px){ .le-fotos-duas, .le-rel-grade{grid-template-columns:1fr;} .le-parada{flex-wrap:wrap;} .le-acoes{flex-direction:row; width:100%;} .le-acoes button{flex:1;} }
 @media print{ .le-acoes, .le-filtros, .le-novos, .le-rel-ctrl, .le-regs{display:none !important;}
   .le-print-box{display:inline-block; width:14px; height:14px; border:1.5px solid #333; margin-top:2px; flex-shrink:0;}
@@ -953,7 +962,7 @@ function leFmtData(s){ const d = new Date(s+"T00:00:00"); return d.toLocaleDateS
 function leEsc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 let LE_ULTIMO = null;
 function viewLimpezaRotas(){
-  return (leFixo() && !LE.simular) ? viewLimpezaFixo() : viewLimpezaSimulador();
+  return execAbas("le","crono") + ((leFixo() && !LE.simular) ? viewLimpezaFixo() : viewLimpezaSimulador());
 }
 function viewLimpezaSimulador(){
   const cr = leMontarCronograma(); LE_ULTIMO = cr;
@@ -1119,9 +1128,9 @@ function leHoje(){ return dataLocalISO(new Date()); }
 function leFixo(){ const c = DATA.leCronograma; return c && Array.isArray(c.dias) && c.dias.length ? c : null; }
 function leDataEf(p, d){ return p.remarcadaPara || d.data; }
 function leAcharParada(id){
-  const c = leFixo(); if(!c) return null;
-  for(const d of c.dias){ const p = (d.paradas||[]).find(x=>x.id===id); if(p) return {p, d}; }
-  return null;
+  const c = leFixo();
+  if(c) for(const d of c.dias){ const p = (d.paradas||[]).find(x=>x.id===id); if(p) return {p, d}; }
+  return execAcharExtra("le", id);
 }
 /* agrupa as paradas fixas pela data efetiva (remarcações mudam o dia) */
 function leDiasFixos(){
@@ -1378,6 +1387,7 @@ function leAbrirRegistro(paradaId, statusInicial){
       <button onclick="leSalvarRegistro()">Salvar</button>
     </div>`;
   document.getElementById("modalBg").classList.add("open");
+  execAjustarModal("le", r);
   leModalToggle();
 }
 function leModalToggle(){
@@ -1390,6 +1400,7 @@ function leFecharModal(){
   if(LE_MODAL){ const r = leAcharParada(LE_MODAL.paradaId);
     const salvas = new Set(r ? [...(r.p.fotosAntes||[]), ...(r.p.fotosDepois||[])].map(f=>f.path) : []);
     [...LE_MODAL.antes, ...LE_MODAL.depois].forEach(f=>{ if(!salvas.has(f.path)) removeFotoPm(f.path); }); }
+  if(LE_MODAL) execDescartarNovo("le", LE_MODAL.paradaId);
   LE_MODAL = null;
   document.getElementById("modalContent").classList.remove("le-modal-larga");
   closeModal();
@@ -1449,6 +1460,7 @@ function leSalvarRegistro(){
   }
   LE_MODAL = null;
   document.getElementById("modalContent").classList.remove("le-modal-larga");
+  delete p.novoAvulso;
   closeModal(); saveData(); render();
   pmAviso(s==="Concluído" ? `${p.nome}: concluída.` : "Registro salvo.");
 }
@@ -1457,15 +1469,18 @@ function leSalvarRegistro(){
 let LE_REL = null;
 function leAbrirRelatorio(){
   if(!LE_REL){ const h = leHoje(); LE_REL = {de: h.slice(0,8)+"01", ate: h, regional:"", naoRealizadas:true, soComFoto:false}; }
-  activeTab = "relatorio_limpeza"; render(); window.scrollTo(0,0);
+  LE_REL.ids = null; activeTab = "relatorio_limpeza"; render(); window.scrollTo(0,0);
 }
 function leItensRelatorio(){
   const fontes = [];
   const c = leFixo(); if(c) fontes.push(c);
   (DATA.leArquivo||[]).forEach(a=>fontes.push(a));
+  fontes.push(execAvulsosFonte("le"));
+  const sel = Array.isArray(LE_REL.ids) && LE_REL.ids.length ? new Set(LE_REL.ids) : null;
   const visto = new Set(), itens = [];
   fontes.forEach(f=>(f.dias||[]).forEach(d=>(d.paradas||[]).forEach(p=>{
     if(visto.has(p.id)) return; visto.add(p.id);
+    if(sel){ if(sel.has(p.id) && p.status==="Concluído") itens.push({tipo:"ok", data:p.dataExec, p}); return; }
     if(LE_REL.regional && p.regional!==LE_REL.regional) return;
     if(p.status==="Concluído" && p.dataExec>=LE_REL.de && p.dataExec<=LE_REL.ate){
       if(LE_REL.soComFoto && !((p.fotosAntes||[]).length+(p.fotosDepois||[]).length)) return;
@@ -1484,23 +1499,27 @@ function viewRelatorioLimpeza(){
   const ok = itens.filter(i=>i.tipo==="ok"), nao = itens.filter(i=>i.tipo==="nao");
   const eq = equipePorTipo("Limpeza de áreas externas");
   const fd = s => (s||"").split("-").reverse().join("/");
+  const selRel = Array.isArray(LE_REL.ids) && LE_REL.ids.length;
+  const datasOk = ok.map(i=>i.data).filter(Boolean).sort();
+  const perTxt = selRel ? (datasOk.length ? `${fd(datasOk[0])} a ${fd(datasOk[datasOk.length-1])}` : "—") : `${fd(LE_REL.de)} a ${fd(LE_REL.ate)}`;
   const nSgd = ok.reduce((n,i)=>n+(i.p.fonte==="cs"?(i.p.ids||[1]).length:0),0);
   const nUn = new Set(ok.map(i=>i.p.unidadeId||i.p.nome)).size;
   const nFotos = ok.reduce((n,i)=>n+(i.p.fotosAntes||[]).length+(i.p.fotosDepois||[]).length,0);
   const regsOpts = ["",...LE_ORDEM_REG].map(r=>`<option value="${r}" ${r===LE_REL.regional?"selected":""}>${r||"Todas as regionais"}</option>`).join("");
   const grade = (lista, rotulo) => lista.length ? `<div class="le-rel-col"><div class="le-rel-rot">${rotulo}</div><div class="le-rel-fotos">${lista.map(f=>`<img src="${f.url}" alt="${rotulo}">`).join("")}</div></div>` : "";
-  return `
+  return `${execAbas("le","rel")}
     <div class="topbar">
       <div>
         <h1 class="tab-title">Relatório fotográfico — Limpeza Externa</h1>
-        <div class="tab-sub">${ok.length} visita(s) concluída(s) de ${fd(LE_REL.de)} a ${fd(LE_REL.ate)}</div>
+        <div class="tab-sub">${ok.length} visita(s) concluída(s) · ${perTxt}${selRel?" · somente os selecionados":""}</div>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="secondary" onclick="setTab('limpeza_rotas')">‹ Voltar ao cronograma</button>
         <button onclick="window.print()">Imprimir / Salvar PDF</button>
       </div>
     </div>
-    <div class="panel le-ctrl le-rel-ctrl">
+    ${selRel?`<div class="note-box le-rel-ctrl"><b>Relatório de ${LE_REL.ids.length} registro(s) escolhido(s) na aba Concluídos.</b> <button class="secondary" onclick="LE_REL.ids=null; render()">Mostrar tudo do período</button></div>`:""}
+    <div class="panel le-ctrl le-rel-ctrl" style="${selRel?"display:none":""}">
       <div class="field"><label>De</label><input type="date" value="${LE_REL.de}" onchange="LE_REL.de=this.value||LE_REL.de; render()"></div>
       <div class="field"><label>Até</label><input type="date" value="${LE_REL.ate}" onchange="LE_REL.ate=this.value||LE_REL.ate; render()"></div>
       <div class="field"><label>Regional</label><select onchange="LE_REL.regional=this.value; render()">${regsOpts}</select></div>
@@ -1523,15 +1542,15 @@ function viewRelatorioLimpeza(){
         </div>
       </div>
       <div class="ci-meta">
-        <div><strong>Período:</strong> ${fd(LE_REL.de)} a ${fd(LE_REL.ate)}</div>
+        <div><strong>Período:</strong> ${perTxt}</div>
         <div><strong>Regional:</strong> ${LE_REL.regional||"Todas"}</div>
         <div><strong>Equipe:</strong> ${eq?leEsc(eq.nome)+" — "+leEsc(eq.integrantes.join(", ")):"Limpeza Externa"}</div>
       </div>
       <div class="ci-equipe">
         <h4>Resumo</h4>
-        <p style="font-size:12.5px; margin:0 0 8px;">${ok.length} visita(s) concluída(s) em ${nUn} unidade(s) — ${nSgd} SGD(s) atendido(s) e ${ok.length - ok.filter(i=>i.p.fonte==="cs").length} visita(s) do rodízio preventivo (roçagem, capina e limpeza de pátio). ${nFotos} foto(s) de registro.${LE_REL.naoRealizadas?` ${nao.length} visita(s) não realizada(s) no período.`:""}</p>
+        <p style="font-size:12.5px; margin:0 0 8px;">${ok.length} visita(s) concluída(s) em ${nUn} unidade(s) — ${nSgd} SGD(s) atendido(s) e ${ok.filter(i=>i.p.fonte==="rodizio").length} visita(s) do rodízio preventivo (roçagem, capina e limpeza de pátio)${ok.some(i=>i.p.fonte==="avulso")?`, além de ${ok.filter(i=>i.p.fonte==="avulso").length} serviço(s) feito(s) fora do cronograma`:""}. ${nFotos} foto(s) de registro.${LE_REL.naoRealizadas?` ${nao.length} visita(s) não realizada(s) no período.`:""}</p>
         ${itens.length?`<table class="ci-table"><thead><tr><th>Nº</th><th>Data</th><th>Unidade</th><th>Regional</th><th>Tipo</th><th>Situação</th></tr></thead><tbody>
-          ${(()=>{ let n=0; return itens.map(i=>`<tr><td>${i.tipo==="ok"?++n:"—"}</td><td style="white-space:nowrap">${fd(i.data)}</td><td>${leEsc(i.p.nome)}</td><td>${leEsc(i.p.regional)}</td><td>${i.p.sgd?"SGD "+leEsc(i.p.sgd):"Rodízio preventivo"}</td><td>${i.tipo==="ok"?"Concluída":"Não realizada — "+leEsc(i.motivo||"")+(i.remarcada?" (remarcada)":"")}</td></tr>`).join(""); })()}
+          ${(()=>{ let n=0; return itens.map(i=>`<tr><td>${i.tipo==="ok"?++n:"—"}</td><td style="white-space:nowrap">${fd(i.data)}</td><td>${leEsc(i.p.nome)}</td><td>${leEsc(i.p.regional)}</td><td>${i.p.sgd?"SGD "+leEsc(i.p.sgd):(i.p.fonte==="avulso"?"Fora do cronograma":"Rodízio preventivo")}</td><td>${i.tipo==="ok"?"Concluída":"Não realizada — "+leEsc(i.motivo||"")+(i.remarcada?" (remarcada)":"")}</td></tr>`).join(""); })()}
         </tbody></table>`:`<p class="ci-empty">Nenhuma visita registrada neste período.</p>`}
       </div>
       ${ok.map((i,k)=>`
@@ -1539,7 +1558,7 @@ function viewRelatorioLimpeza(){
           <h4>${k+1}. ${leEsc(i.p.nome)} <span>— ${fd(i.data)}</span></h4>
           <div class="le-rel-meta">
             <div><strong>Regional:</strong> ${leEsc(i.p.regional)}</div>
-            <div><strong>Origem:</strong> ${i.p.sgd?"SGD "+leEsc(i.p.sgd):"Rodízio preventivo"}</div>
+            <div><strong>Origem:</strong> ${i.p.sgd?"SGD "+leEsc(i.p.sgd):(i.p.fonte==="avulso"?"Fora do cronograma":"Rodízio preventivo")}</div>
             ${i.p.executores?`<div><strong>Executado por:</strong> ${leEsc(i.p.executores)}</div>`:""}
           </div>
           <div class="le-rel-txt"><strong>Serviço:</strong> ${leEsc(i.p.texto)}</div>
@@ -1672,7 +1691,7 @@ function piMontarCronograma(){
   return {base, dias, nParadas:paradas.length};
 }
 function piPrioTag(prio){ const c = PI_PRIO_COR[prio] || "#5B6774"; return `<span class="le-reg" style="background:${c}1F; color:${c}">${leEsc(prio)}</span>`; }
-function piViewRotas(){ return (piFixo() && !PI.simular) ? piViewFixo() : piViewSimulador(); }
+function piViewRotas(){ return execAbas("pi","crono") + ((piFixo() && !PI.simular) ? piViewFixo() : piViewSimulador()); }
 function piViewSimulador(){
   const cr = piMontarCronograma(); PI_ULTIMO = cr;
   const {base, dias} = cr;
@@ -1847,9 +1866,9 @@ function piIncluirItem(){
 /* ---- cronograma fixo ---- */
 function piFixo(){ const c = DATA.piCronograma; return c && Array.isArray(c.dias) && c.dias.length ? c : null; }
 function piAcharParada(id){
-  const c = piFixo(); if(!c) return null;
-  for(const d of c.dias){ const p = (d.paradas||[]).find(x=>x.id===id); if(p) return {p, d}; }
-  return null;
+  const c = piFixo();
+  if(c) for(const d of c.dias){ const p = (d.paradas||[]).find(x=>x.id===id); if(p) return {p, d}; }
+  return execAcharExtra("pi", id);
 }
 function piNovaParada(p){
   return { id:uid(), fonte:"lista", refId:p.id, nome:p.nome, rotulo:p.rotulo, unidadeId:p.unidadeId||null, prioridade:p.prioridade,
@@ -1877,6 +1896,7 @@ function piNovos(){
   const c = piFixo(); if(!c) return [];
   const ja = new Set(); c.dias.forEach(d=>(d.paradas||[]).forEach(p=>ja.add(p.refId)));
   (DATA.piArquivo||[]).forEach(a=>(a.dias||[]).forEach(d=>(d.paradas||[]).forEach(p=>{ if(p.status==="Concluído") ja.add(p.refId); })));
+  (DATA.piAvulsos||[]).forEach(p=>{ if(p.status==="Concluído" && p.refId) ja.add(p.refId); });
   return (DATA.piLista||[]).filter(it=>!ja.has(it.id));
 }
 function piFixarCronograma(){
@@ -1893,6 +1913,7 @@ function piFixarCronograma(){
   }else if(!confirm(`Fixar este cronograma (${cr.dias.length} dias úteis, ${periodo})?\n\nDepois de fixado ele não muda mais sozinho: a equipe segue dia a dia, marca o que instalou e anexa as fotos.`)) return;
   // unidades já concluídas num cronograma anterior não voltam
   const feitas = new Set(); (DATA.piArquivo||[]).forEach(a=>(a.dias||[]).forEach(d=>(d.paradas||[]).forEach(p=>{ if(p.status==="Concluído") feitas.add(p.refId); })));
+  (DATA.piAvulsos||[]).forEach(p=>{ if(p.status==="Concluído" && p.refId) feitas.add(p.refId); });
   DATA.piCronograma = {
     id: uid(), fixadoEm: new Date().toISOString(), inicio: PI.inicio, capacidade: PI.capacidade, capacidadeRural: PI.capacidadeRural,
     base: cr.base,
@@ -2077,7 +2098,8 @@ function piAbrirRegistro(paradaId, statusInicial){
   const {p, d} = r;
   const eq = piEquipe();
   const status = statusInicial || p.status || "Concluído";
-  PI_MODAL = {paradaId, antes:(p.fotosAntes||[]).slice(), depois:(p.fotosDepois||[]).slice(), enviando:{antes:0, depois:0}};
+  PI_MODAL = {paradaId, antes:(p.fotosAntes||[]).slice(), depois:(p.fotosDepois||[]).slice(), enviando:{antes:0, depois:0},
+    mats:(p.baixas||[]).map(b=>({materialId:b.materialId, qtd:String(b.qtd)}))};
   const prevista = leDataEf(p, d);
   const itens = p.itens || {};
   const modal = document.getElementById("modalContent");
@@ -2099,6 +2121,11 @@ function piAbrirRegistro(paradaId, statusInicial){
             <input type="number" min="0" id="piQt_${i.k}" value="${leEsc(v.qtd||"")}" oninput="if(this.value) document.getElementById('piIt_${i.k}').checked=true" placeholder="qtd." style="width:80px; padding:6px 8px; border:1px solid var(--line); border-radius:6px;">
           </div>`; }).join("")}
       </div>
+      <div class="field pi-mats-box"><label>Materiais usados — dá baixa no Controle de Estoque</label>
+        <div id="piMats">${piMatsHtml()}</div>
+        <button type="button" class="secondary" style="margin-top:6px;" onclick="piMatAdd()">＋ Adicionar item</button>
+        <div class="small-text" style="margin-top:4px;">Ao salvar, cada item vira uma saída no Estoque com destino ${leEsc(p.nome)}. As quantidades de extintores, placas e luzes acima são somadas daqui.</div>
+      </div>
     </div>
     <div id="piNaoBox" class="row row-2">
       <div class="field"><label>Motivo</label><select id="piMot">${LE_MOTIVOS.map(m=>`<option ${m===p.motivo?"selected":""}>${m}</option>`).join("")}</select></div>
@@ -2119,6 +2146,7 @@ function piAbrirRegistro(paradaId, statusInicial){
       <button onclick="piSalvarRegistro()">Salvar</button>
     </div>`;
   document.getElementById("modalBg").classList.add("open");
+  execAjustarModal("pi", r);
   piModalToggle();
 }
 function piModalToggle(){
@@ -2130,6 +2158,7 @@ function piFecharModal(){
   if(PI_MODAL){ const r = piAcharParada(PI_MODAL.paradaId);
     const salvas = new Set(r ? [...(r.p.fotosAntes||[]), ...(r.p.fotosDepois||[])].map(f=>f.path) : []);
     [...PI_MODAL.antes, ...PI_MODAL.depois].forEach(f=>{ if(!salvas.has(f.path)) removeFotoPm(f.path); }); }
+  if(PI_MODAL) execDescartarNovo("pi", PI_MODAL.paradaId);
   PI_MODAL = null;
   document.getElementById("modalContent").classList.remove("le-modal-larga");
   closeModal();
@@ -2155,8 +2184,9 @@ function piRemoverFoto(tipo, i){
   PI_MODAL[tipo].splice(i,1);
   document.getElementById("piFotos_"+tipo).innerHTML = piThumbs(tipo);
 }
-function piSalvarRegistro(){
+async function piSalvarRegistro(){
   if(!PI_MODAL) return;
+  if(PI_MODAL.salvando) return;
   if(PI_MODAL.enviando.antes || PI_MODAL.enviando.depois){ alert("Aguarde as fotos terminarem de enviar."); return; }
   const r = piAcharParada(PI_MODAL.paradaId); if(!r){ piFecharModal(); return; }
   const {p, d} = r;
@@ -2170,6 +2200,18 @@ function piSalvarRegistro(){
     if(!PI_ITENS.some(i=>itens[i.k].feito)){ alert("Marque o que foi instalado (extintores, placas e/ou luz de emergência)."); return; }
     if(!PI_MODAL.depois.length && !confirm("Nenhuma foto do DEPOIS. O relatório fotográfico fica sem comprovação desta instalação. Salvar mesmo assim?")) return;
   }
+  if(s==="Não realizado"){ const rem0 = document.getElementById("piRem").value;
+    if(rem0 && rem0 <= dt && !confirm("A nova data é igual ou anterior à data da tentativa. Confirmar?")) return; }
+  // baixa de materiais no Controle de Estoque
+  const mats = s==="Concluído" ? piMatsValidos() : [];
+  if(mats===null) return;
+  if(s!=="Concluído" && (p.baixas||[]).length && !confirm(`Esta instalação tem ${p.baixas.length} item(ns) baixado(s) do estoque. Ao mudar a situação, as saídas serão estornadas (o material volta ao estoque). Continuar?`)) return;
+  const execStr = s==="Concluído" ? document.getElementById("piEx").value.trim() : "";
+  PI_MODAL.salvando = true;
+  const btnS = document.querySelector('#modalContent .modal-actions button:last-child'); if(btnS){ btnS.disabled = true; btnS.textContent = "Salvando…"; }
+  const okEst = await piGravarBaixas(p, mats, dt, execStr);
+  if(PI_MODAL) PI_MODAL.salvando = false;
+  if(!okEst){ if(btnS){ btnS.disabled = false; btnS.textContent = "Salvar"; } return; }
   const ficam = new Set([...PI_MODAL.antes, ...PI_MODAL.depois].map(f=>f.path));
   [...(p.fotosAntes||[]), ...(p.fotosDepois||[])].forEach(f=>{ if(!ficam.has(f.path)) removeFotoPm(f.path); });
   p.fotosAntes = PI_MODAL.antes.slice(); p.fotosDepois = PI_MODAL.depois.slice(); p.obs = obs;
@@ -2180,7 +2222,6 @@ function piSalvarRegistro(){
   }else if(s==="Não realizado"){
     const motivo = document.getElementById("piMot").value, rem = document.getElementById("piRem").value;
     if(rem){
-      if(rem <= dt && !confirm("A nova data é igual ou anterior à data da tentativa. Confirmar?")) return;
       p.ocorrencias.push({id:uid(), data:dt||leDataEf(p,d), motivo, obs});
       p.status = "Pendente"; p.remarcadaPara = rem === d.data ? null : rem; p.dataExec = null; p.motivo = "";
     }else{ p.status = "Não realizado"; p.dataExec = dt; p.motivo = motivo; }
@@ -2190,23 +2231,124 @@ function piSalvarRegistro(){
   }
   PI_MODAL = null;
   document.getElementById("modalContent").classList.remove("le-modal-larga");
+  delete p.novoAvulso;
   closeModal(); saveData(); render();
   pmAviso(s==="Concluído" ? `${p.nome}: instalação concluída.` : "Registro salvo.");
+}
+
+/* ---- materiais usados: baixa no Controle de Estoque (tabela movimentacoes) ---- */
+const PI_CAT_ESTOQUE = "incendio";
+function piMateriaisEstoque(){
+  return (INT.materiais||[]).filter(m=>m.categoria===PI_CAT_ESTOQUE).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
+}
+/* saldo disponível para este registro = saldo do estoque + o que ele mesmo já tinha baixado (edição) */
+function piSaldoPara(materialId){
+  const r = PI_MODAL ? piAcharParada(PI_MODAL.paradaId) : null;
+  const ja = r ? (r.p.baixas||[]).filter(b=>b.materialId===materialId).reduce((n,b)=>n+Number(b.qtd||0),0) : 0;
+  return (INT.saldo[materialId]||0) + ja;
+}
+function piItemDoMaterial(nome){
+  const n = leNorm(nome||"");
+  if(/PLACA|SINALIZ/.test(n)) return "placas";
+  if(/EXTINTOR/.test(n)) return "extintores";
+  if(/LUMIN|LUZ|ILUMINA/.test(n)) return "luzes";
+  return null;
+}
+function piMatsHtml(){
+  const lista = piMateriaisEstoque();
+  if(!lista.length) return `<div class="small-text">${INT.ok ? "Nenhum material da categoria Prevenção a Incêndio no Controle de Estoque." : "Carregando o Controle de Estoque…"}</div>`;
+  const rows = (PI_MODAL ? PI_MODAL.mats : []);
+  if(!rows.length) return `<div class="small-text">Nenhum item adicionado.</div>`;
+  return rows.map((r,i)=>{
+    const m = lista.find(x=>x.id===r.materialId);
+    const saldo = r.materialId ? piSaldoPara(r.materialId) : null;
+    const excede = r.materialId && Number(r.qtd) > saldo;
+    return `<div style="display:flex; gap:8px; align-items:center; margin:4px 0; flex-wrap:wrap;">
+      <select style="flex:1; min-width:220px; padding:6px 8px; border:1px solid var(--line); border-radius:6px;" onchange="PI_MODAL.mats[${i}].materialId=this.value; piMatsRender()">
+        <option value="">— escolha o material —</option>
+        ${lista.map(x=>`<option value="${x.id}" ${x.id===r.materialId?"selected":""}>${leEsc(x.nome)} (saldo ${piSaldoPara(x.id)})</option>`).join("")}
+      </select>
+      <input type="number" min="1" value="${leEsc(r.qtd)}" placeholder="qtd." style="width:80px; padding:6px 8px; border:1px solid ${excede?"var(--red)":"var(--line)"}; border-radius:6px;" oninput="PI_MODAL.mats[${i}].qtd=this.value; piMatsSomar()" onchange="piMatsRender()">
+      <span class="small-text">${m?leEsc(m.unidade||"un"):""}${excede?` <b style="color:var(--red)">· acima do saldo (${saldo})</b>`:""}</span>
+      <button type="button" class="secondary" style="padding:4px 10px;" onclick="PI_MODAL.mats.splice(${i},1); piMatsRender()">✕</button>
+    </div>`;
+  }).join("");
+}
+function piMatsRender(){ const el = document.getElementById("piMats"); if(el) el.innerHTML = piMatsHtml(); piMatsSomar(); }
+function piMatAdd(){ if(!PI_MODAL) return; PI_MODAL.mats.push({materialId:"", qtd:""}); piMatsRender(); }
+/* soma as quantidades de materiais nos campos extintores / placas / luzes */
+function piMatsSomar(){
+  if(!PI_MODAL) return;
+  const lista = piMateriaisEstoque(), soma = {};
+  PI_MODAL.mats.forEach(r=>{ const m = lista.find(x=>x.id===r.materialId); const k = m && piItemDoMaterial(m.nome); if(k && Number(r.qtd)>0) soma[k] = (soma[k]||0) + Number(r.qtd); });
+  Object.keys(soma).forEach(k=>{ const q = document.getElementById("piQt_"+k), c = document.getElementById("piIt_"+k); if(q){ q.value = soma[k]; } if(c) c.checked = true; });
+}
+/* linhas válidas (agrupadas por material); null = usuário desistiu */
+function piMatsValidos(){
+  const agg = new Map();
+  for(const r of (PI_MODAL.mats||[])){
+    if(!r.materialId && !r.qtd) continue;
+    if(!r.materialId){ alert("Escolha o material em todas as linhas (ou remova a linha vazia)."); return null; }
+    const q = Number(r.qtd); if(!(q>0)){ alert("Informe a quantidade de cada material usado."); return null; }
+    agg.set(r.materialId, (agg.get(r.materialId)||0) + q);
+  }
+  const lista = piMateriaisEstoque();
+  const acima = [...agg].filter(([id,q])=>q > piSaldoPara(id)).map(([id,q])=>{ const m = lista.find(x=>x.id===id); return `${m?m.nome:id}: ${q} (saldo ${piSaldoPara(id)})`; });
+  if(acima.length && !confirm("Quantidade maior que o saldo do estoque:\n\n" + acima.join("\n") + "\n\nRegistrar mesmo assim?")) return null;
+  return [...agg].map(([materialId, qtd])=>{ const m = lista.find(x=>x.id===materialId); return {materialId, qtd, nome:m?m.nome:"", unidade:m?m.unidade:"un"}; });
+}
+function piNovoUuid(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c=>(c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & 15) >> c/4).toString(16));
+}
+/* troca as saídas antigas deste registro pelas novas (edição = estorno + nova baixa) */
+async function piGravarBaixas(p, mats, data, executores){
+  const antigas = (p.baixas||[]).map(b=>b.movId).filter(Boolean);
+  const iguais = antigas.length===mats.length && (p.baixas||[]).every(b=>mats.some(m=>m.materialId===b.materialId && Number(m.qtd)===Number(b.qtd))) && (p.baixas||[]).every(b=>b.data===data);
+  if(iguais) return true;
+  if(!csClient){ if(mats.length || antigas.length){ alert("Sem conexão com o banco: não foi possível dar baixa no estoque."); return false; } return true; }
+  const novas = mats.map(m=>({ id: piNovoUuid(), tipo:"saida", material_id:m.materialId, quantidade:m.qtd, data,
+    origem:"", nf:"", quem: executores || piNomeEquipe(), destino: p.nome,
+    finalidade: "Prevenção a incêndio — instalação (Plano de Manutenção)",
+    obs: "pm-incendio:" + p.id, registrado_por: "Plano de Manutenção", assinatura_url:"" }));
+  try{
+    if(novas.length){ const { error } = await csClient.from("movimentacoes").insert(novas); if(error) throw error; }
+    if(antigas.length){
+      const { error } = await csClient.from("movimentacoes").delete().in("id", antigas);
+      if(error){ // desfaz as novas para não baixar em dobro
+        if(novas.length) await csClient.from("movimentacoes").delete().in("id", novas.map(n=>n.id));
+        throw error;
+      }
+    }
+  }catch(e){
+    console.error("Falha ao dar baixa no estoque:", e);
+    alert("Não foi possível registrar a baixa no Controle de Estoque: " + (e.message||e) + "\nNada foi alterado. Verifique a internet e tente de novo.");
+    return false;
+  }
+  p.baixas = novas.map((n,i)=>({movId:n.id, materialId:n.material_id, nome:mats[i].nome, unidade:mats[i].unidade, qtd:n.quantidade, data}));
+  intFetch();
+  return true;
+}
+function piResumoBaixas(p){
+  return (p.baixas||[]).map(b=>`${b.qtd} ${b.unidade||"un"} ${b.nome}`).join("; ");
 }
 
 /* ---- relatório fotográfico ---- */
 let PI_REL = null;
 function piAbrirRelatorio(){
   if(!PI_REL){ const h = leHoje(); PI_REL = {de: h.slice(0,8)+"01", ate: h, prioridade:"", naoRealizadas:true, soComFoto:false}; }
-  activeTab = "relatorio_incendio"; render(); window.scrollTo(0,0);
+  PI_REL.ids = null; activeTab = "relatorio_incendio"; render(); window.scrollTo(0,0);
 }
 function piItensRelatorio(){
   const fontes = [];
   const c = piFixo(); if(c) fontes.push(c);
   (DATA.piArquivo||[]).forEach(a=>fontes.push(a));
+  fontes.push(execAvulsosFonte("pi"));
+  const sel = Array.isArray(PI_REL.ids) && PI_REL.ids.length ? new Set(PI_REL.ids) : null;
   const visto = new Set(), itens = [];
   fontes.forEach(f=>(f.dias||[]).forEach(d=>(d.paradas||[]).forEach(p=>{
     if(visto.has(p.id)) return; visto.add(p.id);
+    if(sel){ if(sel.has(p.id) && p.status==="Concluído") itens.push({tipo:"ok", data:p.dataExec, p}); return; }
     if(PI_REL.prioridade && p.prioridade!==PI_REL.prioridade) return;
     if(p.status==="Concluído" && p.dataExec>=PI_REL.de && p.dataExec<=PI_REL.ate){
       if(PI_REL.soComFoto && !((p.fotosAntes||[]).length+(p.fotosDepois||[]).length)) return;
@@ -2225,6 +2367,9 @@ function piViewRelatorio(){
   const ok = itens.filter(i=>i.tipo==="ok"), nao = itens.filter(i=>i.tipo==="nao");
   const eq = piEquipe();
   const fd = s => (s||"").split("-").reverse().join("/");
+  const selRel = Array.isArray(PI_REL.ids) && PI_REL.ids.length;
+  const datasOk = ok.map(i=>i.data).filter(Boolean).sort();
+  const perTxt = selRel ? (datasOk.length ? `${fd(datasOk[0])} a ${fd(datasOk[datasOk.length-1])}` : "—") : `${fd(PI_REL.de)} a ${fd(PI_REL.ate)}`;
   const nUn = new Set(ok.map(i=>i.p.unidadeId||i.p.nome)).size;
   const nFotos = ok.reduce((n,i)=>n+(i.p.fotosAntes||[]).length+(i.p.fotosDepois||[]).length,0);
   const tot = {extintores:0, placas:0, luzes:0};
@@ -2232,18 +2377,19 @@ function piViewRelatorio(){
   const qtd = (p, k) => { const v = p.itens && p.itens[k]; return v && v.feito ? (v.qtd || "✓") : "—"; };
   const prioOpts = ["",...PI_PRIOS].map(r=>`<option value="${r}" ${r===PI_REL.prioridade?"selected":""}>${r||"Todas as prioridades"}</option>`).join("");
   const grade = (lista, rotulo) => lista.length ? `<div class="le-rel-col"><div class="le-rel-rot">${rotulo}</div><div class="le-rel-fotos">${lista.map(f=>`<img src="${f.url}" alt="${rotulo}">`).join("")}</div></div>` : "";
-  return `
+  return `${execAbas("pi","rel")}
     <div class="topbar">
       <div>
         <h1 class="tab-title">Relatório fotográfico — Prevenção a incêndio</h1>
-        <div class="tab-sub">${ok.length} instalação(ões) concluída(s) de ${fd(PI_REL.de)} a ${fd(PI_REL.ate)}</div>
+        <div class="tab-sub">${ok.length} instalação(ões) concluída(s) · ${perTxt}${selRel?" · somente os selecionados":""}</div>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="secondary" onclick="setTab('incendio_rotas')">‹ Voltar ao cronograma</button>
         <button onclick="window.print()">Imprimir / Salvar PDF</button>
       </div>
     </div>
-    <div class="panel le-ctrl le-rel-ctrl">
+    ${selRel?`<div class="note-box le-rel-ctrl"><b>Relatório de ${PI_REL.ids.length} registro(s) escolhido(s) na aba Concluídos.</b> <button class="secondary" onclick="PI_REL.ids=null; render()">Mostrar tudo do período</button></div>`:""}
+    <div class="panel le-ctrl le-rel-ctrl" style="${selRel?"display:none":""}">
       <div class="field"><label>De</label><input type="date" value="${PI_REL.de}" onchange="PI_REL.de=this.value||PI_REL.de; render()"></div>
       <div class="field"><label>Até</label><input type="date" value="${PI_REL.ate}" onchange="PI_REL.ate=this.value||PI_REL.ate; render()"></div>
       <div class="field"><label>Prioridade</label><select onchange="PI_REL.prioridade=this.value; render()">${prioOpts}</select></div>
@@ -2266,7 +2412,7 @@ function piViewRelatorio(){
         </div>
       </div>
       <div class="ci-meta">
-        <div><strong>Período:</strong> ${fd(PI_REL.de)} a ${fd(PI_REL.ate)}</div>
+        <div><strong>Período:</strong> ${perTxt}</div>
         <div><strong>Prioridade:</strong> ${PI_REL.prioridade||"Todas"}</div>
         <div><strong>Equipe:</strong> ${eq?leEsc(eq.nome)+" — "+leEsc(eq.integrantes.join(", ")):"Instalação"}</div>
       </div>
@@ -2288,6 +2434,7 @@ function piViewRelatorio(){
             ${i.p.executores?`<div><strong>Executado por:</strong> ${leEsc(i.p.executores)}</div>`:""}
           </div>
           <div class="le-rel-txt"><strong>Instalado:</strong> ${leEsc(piResumoItens(i.p)||"não informado")}</div>
+          ${(i.p.baixas||[]).length?`<div class="le-rel-txt"><strong>Materiais (saída do estoque):</strong> ${leEsc(piResumoBaixas(i.p))}</div>`:""}
           ${i.p.obs?`<div class="le-rel-txt"><strong>Observação:</strong> ${leEsc(i.p.obs)}</div>`:""}
           <div class="le-rel-grade">${grade(i.p.fotosAntes||[], "ANTES")}${grade(i.p.fotosDepois||[], "DEPOIS")}</div>
           ${!(i.p.fotosAntes||[]).length && !(i.p.fotosDepois||[]).length ? `<div class="ci-empty">Sem registro fotográfico.</div>` : ""}
@@ -2300,6 +2447,224 @@ function piViewRelatorio(){
         </div>
       </div>
     </div>`;
+}
+
+/* ---------------- CONCLUÍDOS (Limpeza Externa e Prevenção a incêndio) ----------------
+   Aba comum às duas frentes: junta tudo o que foi concluído (cronograma fixo atual,
+   cronogramas anteriores e registros avulsos, isto é, serviço feito fora do cronograma),
+   permite anexar/editar fotos e gerar o relatório fotográfico de um registro, dos
+   selecionados ou do período. Registros avulsos ficam em DATA.leAvulsos / DATA.piAvulsos. */
+const EXEC = {
+  le: { nome:"Limpeza Externa", rotas:"limpeza_rotas", conc:"limpeza_concluidos", rel:"relatorio_limpeza", key:"leAvulsos", pref:"le",
+        fixo:()=>leFixo(), arq:()=>DATA.leArquivo||[], abrir:(id,s)=>leAbrirRegistro(id,s), filtroNome:"Regional",
+        filtroOpts:()=>LE_ORDEM_REG, filtroDe:p=>p.regional,
+        relEstado:()=>{ if(!LE_REL){ const h = leHoje(); LE_REL = {de:h.slice(0,8)+"01", ate:h, regional:"", naoRealizadas:true, soComFoto:false}; } return LE_REL; } },
+  pi: { nome:"Prevenção a incêndio", rotas:"incendio_rotas", conc:"incendio_concluidos", rel:"relatorio_incendio", key:"piAvulsos", pref:"pi",
+        fixo:()=>piFixo(), arq:()=>DATA.piArquivo||[], abrir:(id,s)=>piAbrirRegistro(id,s), filtroNome:"Prioridade",
+        filtroOpts:()=>PI_PRIOS.concat(["Fora da lista"]), filtroDe:p=>p.prioridade,
+        relEstado:()=>{ if(!PI_REL){ const h = leHoje(); PI_REL = {de:h.slice(0,8)+"01", ate:h, prioridade:"", naoRealizadas:true, soComFoto:false}; } return PI_REL; } }
+};
+const EXEC_CONC = { le:{q:"", de:"", ate:"", f:"", sel:[]}, pi:{q:"", de:"", ate:"", f:"", sel:[]} };
+function execAvulsos(mod){ const k = EXEC[mod].key; if(!Array.isArray(DATA[k])) DATA[k] = []; return DATA[k]; }
+function execDiaAvulso(p){ return {data: p.dataPrev || p.dataExec || leHoje()}; }
+function execAvulsosFonte(mod){ return {dias:[{data:"", paradas: (DATA[EXEC[mod].key]||[])}]}; }
+function execAcharExtra(mod, id){
+  const p = (DATA[EXEC[mod].key]||[]).find(x=>x.id===id);
+  if(p) return {p, d:execDiaAvulso(p), avulso:true};
+  for(const a of EXEC[mod].arq()) for(const d of (a.dias||[])){ const q = (d.paradas||[]).find(x=>x.id===id); if(q) return {p:q, d, arquivado:true}; }
+  return null;
+}
+function execTodas(mod){
+  const cfg = EXEC[mod], visto = new Set(), out = [];
+  const add = (p, origem) => { if(!p || visto.has(p.id)) return; visto.add(p.id); out.push({p, origem}); };
+  const c = cfg.fixo(); if(c) c.dias.forEach(d=>(d.paradas||[]).forEach(p=>add(p, "Cronograma")));
+  cfg.arq().forEach(a=>(a.dias||[]).forEach(d=>(d.paradas||[]).forEach(p=>add(p, "Cronograma anterior"))));
+  (DATA[cfg.key]||[]).forEach(p=>add(p, "Fora do cronograma"));
+  return out;
+}
+function execNConcluidos(mod){ return execTodas(mod).filter(x=>x.p.status==="Concluído").length; }
+function execAbas(mod, atual){
+  const cfg = EXEC[mod];
+  const b = (id, txt, onclick, n) => `<button class="le-filtro ${atual===id?"on":""}" onclick="${onclick}">${txt}${n!=null?` <span>${n}</span>`:""}</button>`;
+  return `<div class="le-filtros exec-abas">
+    ${b("crono","Cronograma",`setTab('${cfg.rotas}')`)}
+    ${b("conc","✓ Concluídos",`setTab('${cfg.conc}')`, execNConcluidos(mod))}
+    ${b("rel","Relatório fotográfico",`execAbrirRel('${mod}', null)`)}
+  </div>`;
+}
+/* abre o relatório: ids = lista de registros (ou null = pelo período) */
+function execAbrirRel(mod, ids){
+  const st = EXEC[mod].relEstado();
+  st.ids = ids && ids.length ? ids.slice() : null;
+  activeTab = EXEC[mod].rel; render(); window.scrollTo(0,0);
+}
+function execRelPeriodoConc(mod){
+  const st = EXEC[mod].relEstado(), f = EXEC_CONC[mod];
+  if(f.de) st.de = f.de; if(f.ate) st.ate = f.ate;
+  if(!f.de && !f.ate){ const d = execItensConc(mod).map(x=>x.p.dataExec).filter(Boolean).sort(); if(d.length){ st.de = d[0]; st.ate = d[d.length-1]; } }
+  execAbrirRel(mod, null);
+}
+function execItensConc(mod){
+  const cfg = EXEC[mod], f = EXEC_CONC[mod], q = leNorm(f.q||"");
+  return execTodas(mod).filter(({p})=>{
+    if(p.status!=="Concluído") return false;
+    if(f.de && (p.dataExec||"") < f.de) return false;
+    if(f.ate && (p.dataExec||"") > f.ate) return false;
+    if(f.f && cfg.filtroDe(p)!==f.f) return false;
+    if(q && !leNorm([p.nome, p.obs, p.executores, p.sgd, p.texto].join(" ")).includes(q)) return false;
+    return true;
+  }).sort((a,b)=>(b.p.dataExec||"").localeCompare(a.p.dataExec||"") || a.p.nome.localeCompare(b.p.nome,"pt-BR"));
+}
+function execSel(mod, id, marcado){
+  const f = EXEC_CONC[mod];
+  f.sel = f.sel.filter(x=>x!==id); if(marcado) f.sel.push(id);
+  render();
+}
+function execSelTodos(mod, marcar){
+  EXEC_CONC[mod].sel = marcar ? execItensConc(mod).map(x=>x.p.id) : [];
+  render();
+}
+function execViewConcluidos(mod){
+  const cfg = EXEC[mod], f = EXEC_CONC[mod];
+  const itens = execItensConc(mod);
+  const vis = new Set(itens.map(x=>x.p.id));
+  f.sel = f.sel.filter(id=>vis.has(id));
+  const fd = s => (s||"").split("-").reverse().join("/");
+  const nFotos = itens.reduce((n,x)=>n+(x.p.fotosAntes||[]).length+(x.p.fotosDepois||[]).length,0);
+  const semDepois = itens.filter(x=>!(x.p.fotosDepois||[]).length).length;
+  const nUn = new Set(itens.map(x=>x.p.unidadeId||x.p.nome)).size;
+  const fOpts = ["",...cfg.filtroOpts()].map(o=>`<option value="${leEsc(o)}" ${o===f.f?"selected":""}>${o||"Todas"}</option>`).join("");
+  const mini = (lista, rot) => lista.length ? `<div><small>${rot} (${lista.length})</small><div class="le-mini">${lista.slice(0,4).map(ft=>`<img src="${ft.url}" alt="${rot}">`).join("")}</div></div>` : "";
+  const tag = p => mod==="pi" ? piPrioTag(p.prioridade||"Fora da lista") : (p.sgd ? `<span class="le-sgd">SGD ${leEsc(p.sgd)}</span>` : `<span class="le-sgd">${p.fonte==="avulso"?"avulso":"rodízio"}</span>`);
+  const card = ({p, origem}) => {
+    const marcado = f.sel.includes(p.id);
+    const detalhe = mod==="pi" ? (piResumoItens(p) || "itens não informados") : (p.texto || "");
+    return `<li class="le-parada st-ok">
+      <div class="le-parada-corpo">
+        <div class="exec-conc-tit">
+          <input type="checkbox" ${marcado?"checked":""} onchange="execSel('${mod}','${p.id}',this.checked)" title="Incluir no relatório dos selecionados">
+          <b>${leEsc(p.nome)}</b> ${tag(p)} <span class="badge b-feito">Concluído em ${fd(p.dataExec)}</span>
+          ${origem!=="Cronograma"?`<span class="le-sgd">· ${origem.toLowerCase()}</span>`:""}
+        </div>
+        <div class="le-txt">${leEsc(p.regional||"")}${p.executores?` · por ${leEsc(p.executores)}`:""} · ${leEsc(detalhe)}${p.obs?` · ${leEsc(p.obs)}`:""}</div>
+        ${(p.baixas||[]).length?`<div class="le-txt">📦 Baixado do estoque: ${leEsc(piResumoBaixas(p))}</div>`:""}
+        <div class="exec-fotos">${mini(p.fotosAntes||[], "ANTES")}${mini(p.fotosDepois||[], "DEPOIS")}
+          ${!(p.fotosDepois||[]).length?`<div class="exec-semfoto">Sem foto do DEPOIS — clique em Fotos / editar para anexar.</div>`:""}</div>
+      </div>
+      <div class="le-acoes">
+        <button class="secondary" onclick="EXEC['${mod}'].abrir('${p.id}')">Fotos / editar</button>
+        <button onclick="execAbrirRel('${mod}',['${p.id}'])">Relatório</button>
+      </div>
+    </li>`;
+  };
+  return `${execAbas(mod,"conc")}
+    <div class="topbar">
+      <div>
+        <h1 class="tab-title">${cfg.nome} — concluídos</h1>
+        <div class="tab-sub">Tudo o que já foi concluído — do cronograma fixo, de cronogramas anteriores e serviços feitos fora do cronograma. Marque os registros e gere o relatório fotográfico só deles, ou de um por vez.</div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="secondary" onclick="execNovoRegistro('${mod}')">＋ Registrar conclusão</button>
+        <button class="secondary" onclick="execRelPeriodoConc('${mod}')">Relatório do período</button>
+        <button ${f.sel.length?"":"disabled"} onclick="execAbrirRel('${mod}', EXEC_CONC['${mod}'].sel)">Gerar relatório fotográfico${f.sel.length?` (${f.sel.length})`:""}</button>
+      </div>
+    </div>
+    <div class="grid-cards">
+      <div class="stat st-green"><div class="num">${itens.length}</div><div class="lab">${mod==="pi"?"instalações concluídas":"visitas concluídas"}${(f.q||f.de||f.ate||f.f)?" (com os filtros)":""}</div></div>
+      <div class="stat"><div class="num">${nUn}</div><div class="lab">unidades atendidas</div></div>
+      <div class="stat"><div class="num">${nFotos}</div><div class="lab">fotos anexadas</div></div>
+      <div class="stat ${semDepois?"st-amber":""}"><div class="num">${semDepois}</div><div class="lab">sem foto do DEPOIS</div></div>
+    </div>
+    <div class="panel le-ctrl">
+      <div class="field"><label>Buscar</label><input type="text" value="${leEsc(f.q)}" placeholder="unidade, observação, SGD…" onchange="EXEC_CONC['${mod}'].q=this.value; render()"></div>
+      <div class="field"><label>De</label><input type="date" value="${f.de}" onchange="EXEC_CONC['${mod}'].de=this.value; render()"></div>
+      <div class="field"><label>Até</label><input type="date" value="${f.ate}" onchange="EXEC_CONC['${mod}'].ate=this.value; render()"></div>
+      <div class="field"><label>${cfg.filtroNome}</label><select onchange="EXEC_CONC['${mod}'].f=this.value; render()">${fOpts}</select></div>
+      <div class="le-checks">
+        <label><input type="checkbox" ${itens.length && f.sel.length===itens.length?"checked":""} onchange="execSelTodos('${mod}', this.checked)"> Selecionar todos (${itens.length})</label>
+      </div>
+    </div>
+    <div class="panel">
+      ${itens.length ? `<ol class="le-paradas le-paradas-fixo">${itens.map(card).join("")}</ol>`
+        : `<div class="empty">Nada concluído${(f.q||f.de||f.ate||f.f)?" com esses filtros":" ainda"}. Use <b>✓ Concluir</b> no cronograma ou <b>＋ Registrar conclusão</b> para um serviço feito fora dele.</div>`}
+    </div>`;
+}
+/* registro de serviço concluído fora do cronograma */
+function execNovoRegistro(mod){
+  const uns = DATA.unidades.slice().sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
+  let opts;
+  if(mod==="pi"){
+    piGarantirLista();
+    const fila = new Set(piNovos().map(it=>it.id));
+    const c = piFixo(); if(c) c.dias.forEach(d=>(d.paradas||[]).forEach(p=>{ if(p.status!=="Concluído") fila.add(p.refId); }));
+    const lista = (DATA.piLista||[]).filter(it=>fila.has(it.id)).sort((a,b)=>PI_PRIOS.indexOf(a.prioridade)-PI_PRIOS.indexOf(b.prioridade) || a.nome.localeCompare(b.nome,"pt-BR"));
+    opts = `<optgroup label="Lista de prioridades (ainda não concluídas)">${lista.map(it=>`<option value="L:${it.id}">${leEsc(it.nome)} — ${leEsc(it.prioridade)}</option>`).join("")}</optgroup>
+      <optgroup label="Outras unidades cadastradas">${uns.map(u=>`<option value="U:${u.id}">${leEsc(u.nome)}</option>`).join("")}</optgroup>`;
+  }else{
+    opts = uns.map(u=>`<option value="U:${u.id}">${leEsc(u.nome)}</option>`).join("");
+  }
+  const modal = document.getElementById("modalContent");
+  modal.innerHTML = `
+    <h3 style="margin-top:0;">Registrar conclusão — ${EXEC[mod].nome}</h3>
+    <div class="small-text" style="margin-bottom:10px;">Para serviço já feito que não está no cronograma fixo${mod==="pi"?" (se a unidade estiver no cronograma, ela sai da fila de pendentes)":""}. Na próxima tela você informa data, quem executou e anexa as fotos.</div>
+    <div class="field"><label>Unidade</label><select id="execUn">${opts}</select></div>
+    ${mod==="le"?`<div class="field"><label>Serviço</label><input type="text" id="execTx" value="Roçagem, capina e limpeza do pátio"></div>`:""}
+    <div class="modal-actions">
+      <button class="secondary" onclick="closeModal()">Cancelar</button>
+      <button onclick="execCriarAvulso('${mod}')">Continuar</button>
+    </div>`;
+  document.getElementById("modalBg").classList.add("open");
+}
+function execCriarAvulso(mod){
+  const v = (document.getElementById("execUn")||{}).value || ""; if(!v) return;
+  const [tipo, id] = [v.slice(0,1), v.slice(2)];
+  let parada;
+  if(mod==="pi"){
+    if(tipo==="L"){ const it = (DATA.piLista||[]).find(x=>x.id===id); if(!it) return; parada = piNovaParada(piItemParaParada(it)); }
+    else{ const u = DATA.unidades.find(x=>x.id===id); if(!u) return;
+      parada = piNovaParada({id:null, nome:u.nome, rotulo:u.nome, unidadeId:u.id, prioridade:"Fora da lista",
+        regional: LE_CORES[u.regional] ? u.regional : "Sem regional", lat:u.lat!=null?Number(u.lat):null, lng:u.lng!=null?Number(u.lng):null, texto:PI_SERVICO}); }
+  }else{
+    const u = DATA.unidades.find(x=>x.id===id); if(!u) return;
+    const tx = (document.getElementById("execTx")||{}).value || "Roçagem, capina e limpeza do pátio";
+    parada = leNovaParada({fonte:"avulso", nome:u.nome, unidadeId:u.id, regional: LE_CORES[u.regional] ? u.regional : "Sem regional",
+      lat:u.lat!=null?Number(u.lat):null, lng:u.lng!=null?Number(u.lng):null, texto:tx.trim()});
+  }
+  parada.dataPrev = leHoje(); parada.novoAvulso = true;
+  execAvulsos(mod).push(parada);
+  closeModal();
+  EXEC[mod].abrir(parada.id, "Concluído");
+}
+/* no modal de registro: avulsos e cronogramas anteriores só podem ficar como concluídos */
+function execAjustarModal(mod, r){
+  if(!r || !(r.avulso || r.arquivado)) return;
+  const pref = EXEC[mod].pref;
+  const st = document.getElementById(pref+"St");
+  if(st && (r.p.status==="Concluído" || r.avulso)){ st.value = "Concluído"; st.disabled = true; }
+  const linha = document.querySelector("#modalContent > .small-text");
+  if(linha) linha.textContent = r.avulso ? `Serviço registrado fora do cronograma · ${r.p.regional||""}` : `Cronograma anterior · ${r.p.regional||""}`;
+  if(r.avulso && !r.p.novoAvulso){
+    const acoes = document.querySelector("#modalContent .modal-actions");
+    if(acoes) acoes.insertAdjacentHTML("afterbegin", `<button class="secondary" style="margin-right:auto; color:var(--red)" onclick="execExcluirAvulso('${mod}','${r.p.id}')">Excluir registro</button>`);
+  }
+}
+function execDescartarNovo(mod, id){
+  const arr = DATA[EXEC[mod].key]; if(!Array.isArray(arr)) return;
+  const i = arr.findIndex(x=>x.id===id && x.novoAvulso);
+  if(i>=0){ arr.splice(i,1); saveData(); setTimeout(render, 0); }
+}
+async function execExcluirAvulso(mod, id){
+  const arr = DATA[EXEC[mod].key] || []; const p = arr.find(x=>x.id===id); if(!p) return;
+  if(!confirm(`Excluir o registro de ${p.nome} (${(p.dataExec||"").split("-").reverse().join("/")}) e as fotos dele?${(p.baixas||[]).length?"\n\nAs saídas de material deste registro voltam para o estoque.":""}`)) return;
+  if((p.baixas||[]).length){ if(!(await piGravarBaixas(p, [], p.dataExec, ""))) return; }
+  [...(p.fotosAntes||[]), ...(p.fotosDepois||[])].forEach(f=>removeFotoPm(f.path));
+  if(mod==="le" && LE_MODAL){ [...LE_MODAL.antes, ...LE_MODAL.depois].forEach(f=>removeFotoPm(f.path)); LE_MODAL = null; }
+  if(mod==="pi" && PI_MODAL){ [...PI_MODAL.antes, ...PI_MODAL.depois].forEach(f=>removeFotoPm(f.path)); PI_MODAL = null; }
+  DATA[EXEC[mod].key] = arr.filter(x=>x.id!==id);
+  EXEC_CONC[mod].sel = EXEC_CONC[mod].sel.filter(x=>x!==id);
+  document.getElementById("modalContent").classList.remove("le-modal-larga");
+  closeModal(); saveData(); render();
+  pmAviso("Registro excluído.");
 }
 
 /* ---------------- navegação ---------------- */
@@ -2364,10 +2729,11 @@ let relatorioMes = curMesAno();
 let historicoFiltroUnidade = "";
 let historicoFiltroStatus = "";
 
+const TAB_PAI = {limpeza_concluidos:"limpeza_rotas", relatorio_limpeza:"limpeza_rotas", incendio_concluidos:"incendio_rotas", relatorio_incendio:"incendio_rotas", pi_lista:"incendio_rotas"};
 function renderNav(){
   const nav = document.getElementById("navList");
   nav.innerHTML = TABS.map(t=>`${t.grupo ? `<div class="nav-grupo">${t.grupo}</div>` : ""}
-    <button class="nav-item ${t.id===activeTab?'active':''}" onclick="setTab('${t.id}')">
+    <button class="nav-item ${t.id===(TAB_PAI[activeTab]||activeTab)?'active':''}" onclick="setTab('${t.id}')">
       <span class="nav-dot"></span>${t.label}
     </button>`).join("");
 }
@@ -2397,6 +2763,8 @@ function render(){
   else if(activeTab==="incendio_rotas"){ main.innerHTML = piViewRotas(); setTimeout(()=>{ piInitMapa(); piRolarParaDia(); }, 30); }
   else if(activeTab==="pi_lista") main.innerHTML = piViewLista();
   else if(activeTab==="relatorio_incendio") main.innerHTML = piViewRelatorio();
+  else if(activeTab==="limpeza_concluidos") main.innerHTML = execViewConcluidos("le");
+  else if(activeTab==="incendio_concluidos") main.innerHTML = execViewConcluidos("pi");
   else if(activeTab==="historico") main.innerHTML = viewHistorico();
   else if(activeTab==="relatorio") main.innerHTML = viewRelatorio();
   else if(activeTab==="relatorio_vistoria") main.innerHTML = viewRelatorioVistoria();
