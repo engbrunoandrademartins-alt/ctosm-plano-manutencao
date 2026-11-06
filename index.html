@@ -184,6 +184,7 @@ button.ghost{background:none; color:var(--ink-soft); padding:4px 8px;}
 .ci-table{width:100%; border-collapse:collapse; font-size:11.5px; margin-bottom:6px;}
 .ci-table th{background:#F4F6F3; text-align:left; padding:5px 8px; border:1px solid var(--line); font-size:10.5px;}
 .ci-table td{padding:5px 8px; border:1px solid var(--line);}
+.ci-table td.ci-data, .ci-table th.ci-data{white-space:nowrap; text-align:center;}
 .ci-obs{font-size:11.5px; margin:6px 0;}
 .ci-assinatura{font-size:11px; color:var(--ink-soft); margin-top:8px;}
 .ci-legenda{margin-top:16px; padding-top:10px; border-top:1px solid var(--line); font-size:11px; color:var(--ink-soft);}
@@ -4378,7 +4379,7 @@ function itensDoMesPorEquipe(mesAno){
     const status = c ? c.status : "Pendente";
     const eqId = equipeDoItem(it) || "__sem_equipe__";
     const prioridade = it.prioridade||"P4";
-    grupos[eqId].push({tipo:"Plano recorrente", unidadeId:it.unidadeId, tipoServico:it.tipoServico, descricao:it.observacao||"", status, prioridade, criadoEm:it.criadoEm||null, vencido:isVencido(it.criadoEm, prioridade, status, it.unidadeId), origemId:it.id});
+    grupos[eqId].push({tipo:"Plano recorrente", unidadeId:it.unidadeId, tipoServico:it.tipoServico, descricao:it.observacao||"", status, prioridade, criadoEm:it.criadoEm||null, dataExecucao:(c&&c.dataExecucao)||null, vencido:isVencido(it.criadoEm, prioridade, status, it.unidadeId), origemId:it.id});
   });
   DATA.ciclos.filter(c=>c.status==="Não feito" && c.replanejarPara===mesAno).forEach(c=>{
     const it = DATA.planoItens.find(i=>i.id===c.planoItemId);
@@ -4389,7 +4390,7 @@ function itensDoMesPorEquipe(mesAno){
   DATA.demandas.filter(d=>d.mesAlvo===mesAno).forEach(d=>{
     const eqId = d.equipeId || "__sem_equipe__";
     const prioridade = d.prioridade||"P2";
-    grupos[eqId].push({tipo: d.origem==="Vistoria"?"Vistoria":d.origem==="Chamado"?"Chamado":d.origem==="Planejamento"?"Planejamento":"Demanda avulsa", unidadeId:d.unidadeId, tipoServico:d.tipoServico, descricao:d.descricao, status:d.status, prioridade, criadoEm:d.criadoEm, vencido:isVencido(d.criadoEm, prioridade, d.status, d.unidadeId), origemId:d.id, demandaId:d.id});
+    grupos[eqId].push({tipo: d.origem==="Vistoria"?"Vistoria":d.origem==="Chamado"?"Chamado":d.origem==="Planejamento"?"Planejamento":"Demanda avulsa", unidadeId:d.unidadeId, tipoServico:d.tipoServico, descricao:d.descricao, status:d.status, prioridade, criadoEm:d.criadoEm, dataExecucao:d.dataExecucao||null, vencido:isVencido(d.criadoEm, prioridade, d.status, d.unidadeId), origemId:d.id, demandaId:d.id});
   });
   if(mesAno === curMesAno()){
     csItensAbertos().forEach(i=>{
@@ -5011,6 +5012,15 @@ async function baixarWordVistoria(vistoriaId){
   URL.revokeObjectURL(url);
 }
 
+/* data no formato dd/mm/aaaa — aceita "aaaa-mm-dd" e ISO; datas só-dia gravadas
+   como meia-noite UTC não "voltam" um dia no fuso de Cuiabá */
+function fmtDataBR(v){
+  if(!v) return "";
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T00:00:00(?:\.0+)?(?:Z|\+00:00)$)/);
+  if(m) return m[3]+"/"+m[2]+"/"+m[1];
+  const d = new Date(v);
+  return isNaN(d) ? "" : d.toLocaleDateString('pt-BR');
+}
 function viewRelatorio(){
   const mesExec = relatorioMes;
   const mesPlan = addMonths(relatorioMes,1);
@@ -5033,12 +5043,12 @@ function viewRelatorio(){
         <h4>${e.nome} <span class="ci-integrantes">(${e.integrantes.join(", ")})</span></h4>
         <div class="ci-sub">Executado / em andamento em ${fmtMes(mesExec)}</div>
         ${execItens.length===0 ? `<p class="ci-empty">Nenhum item em andamento ou concluído neste mês.</p>` :
-        `<table class="ci-table"><thead><tr><th>Unidade</th><th>Tipo</th><th>Prioridade</th><th>Descrição</th><th>Situação</th></tr></thead>
-        <tbody>${execItens.map(i=>`<tr><td>${i.unidadeNomeRaw || unidadeNome(i.unidadeId)}</td><td>${i.tipoServico}</td><td>${i.prioridade||"P4"}</td><td>${i.descricao||"—"}</td><td>${i.status}</td></tr>`).join("")}</tbody></table>`}
+        `<table class="ci-table"><thead><tr><th>Unidade</th><th>Tipo</th><th>Prioridade</th><th>Descrição</th><th class="ci-data">Chegada da solicitação</th><th class="ci-data">Conclusão da execução</th><th>Situação</th></tr></thead>
+        <tbody>${execItens.map(i=>`<tr><td>${i.unidadeNomeRaw || unidadeNome(i.unidadeId)}</td><td>${i.tipoServico}</td><td>${i.prioridade||"P4"}</td><td>${i.descricao||"—"}</td><td class="ci-data">${fmtDataBR(i.criadoEm)||"—"}</td><td class="ci-data">${fmtDataBR(i.dataExecucao)||(i.status==="Feito"?"—":"Em andamento")}</td><td>${i.status}</td></tr>`).join("")}</tbody></table>`}
         <div class="ci-sub">Planejado para ${fmtMes(mesPlan)}</div>
         ${planItens.length===0 ? `<p class="ci-empty">Nenhum item pendente para o próximo mês.</p>` :
-        `<table class="ci-table"><thead><tr><th>Unidade</th><th>Tipo</th><th>Prioridade</th><th>Descrição</th></tr></thead>
-        <tbody>${planItens.map(i=>`<tr><td>${i.unidadeNomeRaw || unidadeNome(i.unidadeId)}</td><td>${i.tipoServico}</td><td>${i.prioridade||"P4"}</td><td>${i.descricao||"—"}</td></tr>`).join("")}</tbody></table>`}
+        `<table class="ci-table"><thead><tr><th>Unidade</th><th>Tipo</th><th>Prioridade</th><th>Descrição</th><th class="ci-data">Chegada da solicitação</th></tr></thead>
+        <tbody>${planItens.map(i=>`<tr><td>${i.unidadeNomeRaw || unidadeNome(i.unidadeId)}</td><td>${i.tipoServico}</td><td>${i.prioridade||"P4"}</td><td>${i.descricao||"—"}</td><td class="ci-data">${fmtDataBR(i.criadoEm)||"—"}</td></tr>`).join("")}</tbody></table>`}
         ${obsPlan ? `<p class="ci-obs"><strong>Observações de planejamento:</strong> ${obsPlan}</p>` : ""}
       </div>
     `;
