@@ -2727,6 +2727,8 @@ let calendarioMesAno = curMesAno();
 let semanaInicio = (function(){ const d=new Date(); const dia=d.getDay(); d.setDate(d.getDate()-dia); return dataLocalISO(d); })();
 let calendarioDiaSelecionado = null;
 let relatorioMes = curMesAno();
+/* status exibido na CI: "ambos" | "executado" | "programado" */
+let relatorioStatus = "ambos";
 let historicoFiltroUnidade = "";
 let historicoFiltroStatus = "";
 
@@ -5033,6 +5035,9 @@ function viewRelatorio(){
   const anosDisponiveis = [];
   for(let a=2026; a<=anoAtualReal+3; a++) anosDisponiveis.push(a);
 
+  const mostraExec = relatorioStatus!=="programado";
+  const mostraPlan = relatorioStatus!=="executado";
+  const totalPlan = DATA.equipes.reduce((n,e)=>n+(gruposPlan[e.id]||[]).length,0);
   const corpoEquipes = DATA.equipes.map(e=>{
     const execItens = (gruposExec[e.id]||[]).filter(i=>i.status==="Feito"||i.status==="Parcial"||i.status==="Em execução");
     const planItens = (gruposPlan[e.id]||[]);
@@ -5041,15 +5046,17 @@ function viewRelatorio(){
     return `
       <div class="ci-equipe">
         <h4>${e.nome} <span class="ci-integrantes">(${e.integrantes.join(", ")})</span></h4>
-        <div class="ci-sub">Executado / em andamento em ${fmtMes(mesExec)}</div>
+        ${mostraExec ? `<div class="ci-sub">Executado / em andamento em ${fmtMes(mesExec)}</div>
         ${execItens.length===0 ? `<p class="ci-empty">Nenhum item em andamento ou concluído neste mês.</p>` :
         `<table class="ci-table"><thead><tr><th>Unidade</th><th>Tipo</th><th>Prioridade</th><th>Descrição</th><th class="ci-data">Chegada da solicitação</th><th class="ci-data">Conclusão da execução</th><th>Situação</th></tr></thead>
         <tbody>${execItens.map(i=>`<tr><td>${i.unidadeNomeRaw || unidadeNome(i.unidadeId)}</td><td>${i.tipoServico}</td><td>${i.prioridade||"P4"}</td><td>${i.descricao||"—"}</td><td class="ci-data">${fmtDataBR(i.criadoEm)||"—"}</td><td class="ci-data">${fmtDataBR(i.dataExecucao)||(i.status==="Feito"?"—":"Em andamento")}</td><td>${i.status}</td></tr>`).join("")}</tbody></table>`}
-        <div class="ci-sub">Planejado para ${fmtMes(mesPlan)}</div>
+` : ""}
+        ${mostraPlan ? `<div class="ci-sub">Programado para execução em ${fmtMes(mesPlan)}</div>
         ${planItens.length===0 ? `<p class="ci-empty">Nenhum item pendente para o próximo mês.</p>` :
         `<table class="ci-table"><thead><tr><th>Unidade</th><th>Tipo</th><th>Prioridade</th><th>Descrição</th><th class="ci-data">Chegada da solicitação</th></tr></thead>
         <tbody>${planItens.map(i=>`<tr><td>${i.unidadeNomeRaw || unidadeNome(i.unidadeId)}</td><td>${i.tipoServico}</td><td>${i.prioridade||"P4"}</td><td>${i.descricao||"—"}</td><td class="ci-data">${fmtDataBR(i.criadoEm)||"—"}</td></tr>`).join("")}</tbody></table>`}
         ${obsPlan ? `<p class="ci-obs"><strong>Observações de planejamento:</strong> ${obsPlan}</p>` : ""}
+        ` : ""}
       </div>
     `;
   }).join("");
@@ -5066,6 +5073,11 @@ function viewRelatorio(){
         </select>
         <select onchange="relatorioMes = relatorioMes.split('-')[0]+'-'+this.value; render();">
           ${nomesMeses.map((n,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${String(i+1).padStart(2,'0')===mesNumExec?"selected":""}>${n}</option>`).join("")}
+        </select>
+        <select title="Status exibido na CI" onchange="relatorioStatus=this.value; render();">
+          <option value="ambos" ${relatorioStatus==="ambos"?"selected":""}>Executado + programado</option>
+          <option value="executado" ${relatorioStatus==="executado"?"selected":""}>Executado no mês de referência</option>
+          <option value="programado" ${relatorioStatus==="programado"?"selected":""}>Programado para o mês seguinte</option>
         </select>
         <button onclick="window.print()">Imprimir / Salvar PDF</button>
       </div>
@@ -5089,16 +5101,18 @@ function viewRelatorio(){
       </div>
       <div class="ci-meta">
         <div><strong>Assunto:</strong> Relatório mensal do Plano de Manutenção Preventiva e Corretiva das Unidades de Saúde</div>
-        <div><strong>Referência:</strong> Execução em ${fmtMes(mesExec)} · Planejamento para ${fmtMes(mesPlan)}</div>
+        <div><strong>Referência:</strong> ${relatorioStatus==="executado" ? `Executado em ${fmtMes(mesExec)}` : relatorioStatus==="programado" ? `Programado para execução em ${fmtMes(mesPlan)}` : `Executado em ${fmtMes(mesExec)} · Programado para execução em ${fmtMes(mesPlan)}`}</div>
       </div>
 
-      <div class="ci-resumo">
+      ${relatorioStatus==="programado" ? `<div class="ci-resumo">
+        <div><strong>${totalPlan}</strong><span>itens programados para ${fmtMes(mesPlan)}</span></div>
+      </div>` : `<div class="ci-resumo">
         <div><strong>${resumo.total}</strong><span>itens previstos</span></div>
         <div><strong>${resumo.feitos}</strong><span>feitos</span></div>
         <div><strong>${resumo.naoFeitos}</strong><span>não feitos</span></div>
         <div><strong>${resumo.parciais+resumo.pendentes}</strong><span>pendentes/parciais</span></div>
         <div><strong>${resumo.total?Math.round(resumo.feitos/resumo.total*100):0}%</strong><span>de conclusão</span></div>
-      </div>
+      </div>`}
 
       ${corpoEquipes}
 
